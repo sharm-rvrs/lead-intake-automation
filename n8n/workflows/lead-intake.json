@@ -1,0 +1,106 @@
+{
+  "id": "leadintakemain01",
+  "name": "Lead Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "onReceived",
+        "responseCode": 200,
+        "options": {}
+      },
+      "id": "a1f1e1c0-0001-4a2b-9c3d-000000000001",
+      "name": "Lead Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "b2f2e2c0-0002-4a2b-9c3d-000000000002"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const item = $input.first().json;\nconst headers = item.headers || {};\nconst body = item.body || {};\n\nconst expectedSecret = $env.WEBHOOK_SECRET;\nconst providedSecret = headers['x-webhook-secret'];\n\nif (!expectedSecret || providedSecret !== expectedSecret) {\n  throw new Error('Unauthorized: x-webhook-secret header missing or invalid');\n}\n\nreturn [{\n  json: {\n    name: String(body.name || '').trim(),\n    email: String(body.email || '').trim().toLowerCase(),\n    company: String(body.company || '').trim(),\n    message: String(body.message || '').trim(),\n    budget: String(body.budget || '').trim(),\n  }\n}];"
+      },
+      "id": "c3f3e3c0-0003-4a2b-9c3d-000000000003",
+      "name": "Validate & Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "d4f4e4c0-0004-4a2b-9c3d-000000000004",
+              "leftValue": "={{ $json.email }}",
+              "rightValue": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e5f5e5c0-0005-4a2b-9c3d-000000000005",
+      "name": "Valid Email Format?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {},
+      "id": "f6f6e6c0-0006-4a2b-9c3d-000000000006",
+      "name": "Continue -> Step 4 (Dedupe)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [ { title: '⚠️ Malformed lead rejected', color: 15548997, fields: [ { name: 'Name', value: $json.name || 'not provided', inline: true }, { name: 'Email', value: $json.email || 'not provided', inline: true }, { name: 'Reason', value: 'Invalid email format', inline: false } ], footer: { text: 'Bloom Studio | Lead Intake' }, timestamp: $now.toISO() } ] }) }}",
+        "options": {}
+      },
+      "id": "07f7e7c0-0007-4a2b-9c3d-000000000007",
+      "name": "Notify Discord: Malformed Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 100],
+      "continueOnFail": true
+    }
+  ],
+  "connections": {
+    "Lead Webhook": {
+      "main": [
+        [{ "node": "Validate & Normalize", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validate & Normalize": {
+      "main": [
+        [{ "node": "Valid Email Format?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Valid Email Format?": {
+      "main": [
+        [{ "node": "Continue -> Step 4 (Dedupe)", "type": "main", "index": 0 }],
+        [{ "node": "Notify Discord: Malformed Lead", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

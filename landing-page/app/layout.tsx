@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+// @ts-expect-error -- Next.js handles global CSS imports in the app router build pipeline
 import "./globals.css";
 
 const bodyFont = Inter({
