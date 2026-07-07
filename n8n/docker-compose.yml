@@ -1,0 +1,18 @@
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: lead-intake-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - GENERIC_TIMEZONE=Asia/Manila
+      - TZ=Asia/Manila
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
