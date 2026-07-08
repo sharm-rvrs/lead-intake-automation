@@ -58,12 +58,98 @@
       "position": [440, 0]
     },
     {
-      "parameters": {},
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "filterByFormula", "value": "={{ '{Email} = \"' + $json.email + '\"' }}" },
+            { "name": "maxRecords", "value": "1" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
       "id": "f6f6e6c0-0006-4a2b-9c3d-000000000006",
-      "name": "Continue -> Step 4 (Dedupe)",
+      "name": "Search Lead by Email",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, -160]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "18f8e8c0-0008-4a2b-9c3d-000000000008",
+              "leftValue": "={{ $json.records.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "29f9e9c0-0009-4a2b-9c3d-000000000009",
+      "name": "Lead Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [880, -160]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const searchResult = $input.first().json;\nconst lead = $('Validate & Normalize').item.json;\n\nconst record = searchResult.records[0];\nconst existingMessage = record.fields.Message || '';\nconst timestamp = new Date().toISOString();\nconst appendedNote = '\\n\\n[Follow-up inquiry ' + timestamp + ']: ' + lead.message;\n\nreturn [{\n  json: {\n    recordId: record.id,\n    updatedMessage: existingMessage + appendedNote,\n  }\n}];"
+      },
+      "id": "3a0a0ac0-000a-4a2b-9c3d-00000000000a",
+      "name": "Prepare Duplicate Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, -260]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR/' + $json.recordId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Message: $json.updatedMessage } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "4b1b1bc0-001b-4a2b-9c3d-00000000001b",
+      "name": "Update Existing Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, -260]
+    },
+    {
+      "parameters": {},
+      "id": "5c2c2cc0-002c-4a2b-9c3d-00000000002c",
+      "name": "Continue -> Step 5 (Groq Classification)",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [660, -100]
+      "position": [1100, -60]
     },
     {
       "parameters": {
@@ -95,8 +181,24 @@
     },
     "Valid Email Format?": {
       "main": [
-        [{ "node": "Continue -> Step 4 (Dedupe)", "type": "main", "index": 0 }],
+        [{ "node": "Search Lead by Email", "type": "main", "index": 0 }],
         [{ "node": "Notify Discord: Malformed Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Search Lead by Email": {
+      "main": [
+        [{ "node": "Lead Exists?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Lead Exists?": {
+      "main": [
+        [{ "node": "Prepare Duplicate Update", "type": "main", "index": 0 }],
+        [{ "node": "Continue -> Step 5 (Groq Classification)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Prepare Duplicate Update": {
+      "main": [
+        [{ "node": "Update Existing Lead", "type": "main", "index": 0 }]
       ]
     }
   },
