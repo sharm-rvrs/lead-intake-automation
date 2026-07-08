@@ -146,7 +146,7 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const lead = $('Validate & Normalize').item.json;\n\nconst systemPrompt = [\n  'You are the intake assistant for Bloom Studio, a small creative/marketing agency.',\n  'You will receive a lead inquiry submitted through the website contact form.',\n  'Classify the inquiry into exactly one category: sales, support, partnership, or spam.',\n  'Then draft a reply in reply_body following these exact rules:',\n  '- Greet the lead with \"Hi {name},\" using their first name, never \"Dear\".',\n  '- Keep the entire body under 120 words.',\n  '- Include one concrete next step or question that is directly relevant to their specific inquiry.',\n  '- End with exactly this sign-off, using a literal JSON \\\\n escape for the line break inside the reply_body string value: \"Warm regards,\\\\nThe Bloom Studio Team\".',\n  'Example of a correctly formatted reply_body value showing the required escape: \"Hi Alex, thanks for reaching out. Could you share your target launch date?\\\\nWarm regards,\\\\nThe Bloom Studio Team\"',\n  'If the inquiry looks like spam, still draft a brief generic reply_body following the same rules even though it will not be sent.',\n  'Respond ONLY with a single minified JSON object, no markdown code fences, no commentary, matching exactly this shape:',\n  '{\"category\": \"sales\" | \"support\" | \"partnership\" | \"spam\", \"confidence\": number between 0 and 1, \"reply_subject\": string, \"reply_body\": string}',\n].join('\\n');\n\nconst userPrompt = [\n  'Name: ' + lead.name,\n  'Email: ' + lead.email,\n  'Company: ' + (lead.company || 'N/A'),\n  'Budget: ' + lead.budget,\n  'Message: ' + lead.message,\n].join('\\n');\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt,\n    userPrompt,\n  }\n}];"
+        "jsCode": "const lead = $('Validate & Normalize').item.json;\n\nconst systemPrompt = [\n  'You are the intake assistant for Bloom Studio, a small creative/marketing agency.',\n  'You will receive a lead inquiry submitted through the website contact form.',\n  'Classify the inquiry into exactly one category: sales, support, partnership, or spam.',\n  'Then draft a reply in reply_body following these exact content rules:',\n  '- Total length must be 60 to 120 words.',\n  '- Acknowledge the lead specific request, using details or phrasing from their own message, not generic language.',\n  '- Include exactly one warm, confidence building sentence about how Bloom Studio can help with their particular need.',\n  '- End with exactly one concrete clarifying question or suggested next step relevant to their inquiry.',\n  '- The clarifying question must ask about something the lead has not already told you. Never re-ask about budget, timeline, or scope details they already provided in their message. Ask about the next genuine unknown instead, for example if they mention taking orders via Instagram ask for their handle so you can review their menu, or if they mention a product count ask about their payment or delivery preferences.',\n  '- Never fabricate specific past experience, client counts, or results, such as claiming Bloom Studio has helped a certain number of similar businesses. Keep confidence statements general instead, like saying this is exactly the kind of project Bloom Studio loves working on.',\n  '- Never use em dashes anywhere in the reply.',\n  'Then format reply_body as real paragraphs, using a literal JSON \\\\n escape for every line break, structured exactly like this:',\n  '1. A greeting line: \"Hi {name},\" using their first name, never \"Dear\".',\n  '2. A blank line (two consecutive \\\\n escapes) separating the greeting from the body.',\n  '3. One to two short body paragraphs containing the acknowledgment, the confidence building sentence, and the clarifying question or next step.',\n  '4. A blank line (two consecutive \\\\n escapes) separating the body from the sign off.',\n  '5. \"Warm regards,\" on its own line.',\n  '6. \"The Bloom Studio Team\" on its own line, directly after, with no blank line between the two sign off lines.',\n  'Example of a correctly formatted reply_body value showing the required escapes, a general confidence statement instead of a fabricated claim, and a clarifying question about a genuine unknown rather than something already answered: \"Hi Alex,\\\\n\\\\nThanks for reaching out about a new site for your yoga studio with class booking, this is exactly the kind of project Bloom Studio loves working on.\\\\n\\\\nDo you already have a booking platform you would like the site to connect with, or should we recommend one?\\\\n\\\\nWarm regards,\\\\nThe Bloom Studio Team\"',\n  'If the inquiry looks like spam, still draft a brief generic reply_body following the same content and formatting rules even though it will not be sent.',\n  'Respond ONLY with a single minified JSON object, no markdown code fences, no commentary, matching exactly this shape:',\n  '{\"category\": \"sales\" | \"support\" | \"partnership\" | \"spam\", \"confidence\": number between 0 and 1, \"reply_subject\": string, \"reply_body\": string}',\n].join('\\n');\n\nconst userPrompt = [\n  'Name: ' + lead.name,\n  'Email: ' + lead.email,\n  'Company: ' + (lead.company || 'N/A'),\n  'Budget: ' + lead.budget,\n  'Message: ' + lead.message,\n].join('\\n');\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt,\n    userPrompt,\n  }\n}];"
       },
       "id": "6d3d3dc0-003d-4a2b-9c3d-00000000003d",
       "name": "Build Groq Prompt",
@@ -262,12 +262,65 @@
       "continueOnFail": true
     },
     {
-      "parameters": {},
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Name: $json.name, Email: $json.email, Company: $json.company, Message: $json.message, Category: $json.categoryLabel, Status: 'Awaiting Reply', 'AI Draft': 'Subject: ' + $json.reply_subject + '\\n\\n' + $json.reply_body, 'Last Contacted': $now.toISO() } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
       "id": "e5666660-0066-4a2b-9c3d-000000000066",
-      "name": "Continue -> Step 6 (Save + Send + Notify)",
-      "type": "n8n-nodes-base.noOp",
-      "typeVersion": 1,
+      "name": "Create Airtable Record (Awaiting Reply)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [1980, 40]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $('Parse Groq Response').item.json.email }}",
+        "subject": "={{ $('Parse Groq Response').item.json.reply_subject }}",
+        "emailType": "text",
+        "message": "={{ $('Parse Groq Response').item.json.reply_body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "f6777770-0067-4a2b-9c3d-000000000067",
+      "name": "Send Reply Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [2200, 40],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "quLPG8FlKdqVHZE5",
+          "name": "Gmail - Bloom Studio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_LEADS_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [ { title: 'New lead received', color: 5763719, fields: [ { name: 'Name', value: $('Parse Groq Response').item.json.name || 'not provided', inline: true }, { name: 'Email', value: $('Parse Groq Response').item.json.email || 'not provided', inline: true }, { name: 'Category', value: $('Parse Groq Response').item.json.categoryLabel, inline: true }, { name: 'Confidence', value: Math.round($('Parse Groq Response').item.json.confidence * 100) + '%', inline: true }, { name: 'Budget', value: $('Parse Groq Response').item.json.budget || 'not provided', inline: true } ], footer: { text: 'Bloom Studio | Lead Intake' }, timestamp: $now.toISO() } ] }) }}",
+        "options": {}
+      },
+      "id": "08888880-0068-4a2b-9c3d-000000000068",
+      "name": "Notify Discord: New Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 40],
+      "continueOnFail": true
     },
     {
       "parameters": {
@@ -337,12 +390,22 @@
     "Spam & High Confidence?": {
       "main": [
         [{ "node": "Create Airtable Record (Spam - Closed)", "type": "main", "index": 0 }],
-        [{ "node": "Continue -> Step 6 (Save + Send + Notify)", "type": "main", "index": 0 }]
+        [{ "node": "Create Airtable Record (Awaiting Reply)", "type": "main", "index": 0 }]
       ]
     },
     "Create Airtable Record (Spam - Closed)": {
       "main": [
         [{ "node": "Notify Discord: Spam Lead Closed", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Airtable Record (Awaiting Reply)": {
+      "main": [
+        [{ "node": "Send Reply Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Reply Email": {
+      "main": [
+        [{ "node": "Notify Discord: New Lead", "type": "main", "index": 0 }]
       ]
     }
   },
