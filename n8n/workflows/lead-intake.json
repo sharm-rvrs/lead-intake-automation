@@ -144,12 +144,130 @@
       "position": [1320, -260]
     },
     {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const lead = $('Validate & Normalize').item.json;\n\nconst systemPrompt = [\n  'You are the intake assistant for Bloom Studio, a small creative/marketing agency.',\n  'You will receive a lead inquiry submitted through the website contact form.',\n  'Classify the inquiry into exactly one category: sales, support, partnership, or spam.',\n  'Then draft a reply in reply_body following these exact rules:',\n  '- Greet the lead with \"Hi {name},\" using their first name, never \"Dear\".',\n  '- Keep the entire body under 120 words.',\n  '- Include one concrete next step or question that is directly relevant to their specific inquiry.',\n  '- End with exactly this sign-off, using a literal JSON \\\\n escape for the line break inside the reply_body string value: \"Warm regards,\\\\nThe Bloom Studio Team\".',\n  'Example of a correctly formatted reply_body value showing the required escape: \"Hi Alex, thanks for reaching out. Could you share your target launch date?\\\\nWarm regards,\\\\nThe Bloom Studio Team\"',\n  'If the inquiry looks like spam, still draft a brief generic reply_body following the same rules even though it will not be sent.',\n  'Respond ONLY with a single minified JSON object, no markdown code fences, no commentary, matching exactly this shape:',\n  '{\"category\": \"sales\" | \"support\" | \"partnership\" | \"spam\", \"confidence\": number between 0 and 1, \"reply_subject\": string, \"reply_body\": string}',\n].join('\\n');\n\nconst userPrompt = [\n  'Name: ' + lead.name,\n  'Email: ' + lead.email,\n  'Company: ' + (lead.company || 'N/A'),\n  'Budget: ' + lead.budget,\n  'Message: ' + lead.message,\n].join('\\n');\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt,\n    userPrompt,\n  }\n}];"
+      },
+      "id": "6d3d3dc0-003d-4a2b-9c3d-00000000003d",
+      "name": "Build Groq Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, -60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0.4, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userPrompt } ] }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.GROQ_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7e4e4ec0-004e-4a2b-9c3d-00000000004e",
+      "name": "Groq Classify & Draft Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, -60]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst lead = $('Build Groq Prompt').item.json;\n\nlet content = '';\ntry {\n  content = response.choices[0].message.content;\n} catch (e) {\n  content = '';\n}\n\ncontent = String(content || '').trim();\nif (content.startsWith('```')) {\n  content = content.replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/i, '').trim();\n}\n\nlet parsed = null;\ntry {\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = null;\n}\n\nconst allowedCategories = ['sales', 'support', 'partnership', 'spam'];\n\nlet category = 'unclassified';\nlet confidence = 0;\nlet reply_subject = '';\nlet reply_body = '';\n\nif (parsed && typeof parsed === 'object') {\n  const rawCategory = String(parsed.category || '').toLowerCase().trim();\n  category = allowedCategories.includes(rawCategory) ? rawCategory : 'unclassified';\n  const rawConfidence = typeof parsed.confidence === 'number' ? parsed.confidence : Number(parsed.confidence);\n  confidence = Number.isFinite(rawConfidence) ? rawConfidence : 0;\n  reply_subject = String(parsed.reply_subject || '').trim();\n  reply_body = String(parsed.reply_body || '').trim();\n}\n\nconst categoryLabel = category.charAt(0).toUpperCase() + category.slice(1);\n\nreturn [{\n  json: {\n    name: lead.name,\n    email: lead.email,\n    company: lead.company,\n    message: lead.message,\n    budget: lead.budget,\n    category,\n    categoryLabel,\n    confidence,\n    reply_subject,\n    reply_body,\n  }\n}];"
+      },
+      "id": "8f5f5fc0-005f-4a2b-9c3d-00000000005f",
+      "name": "Parse Groq Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, -60]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "9061616c0-0061-4a2b-9c3d-000000000061",
+              "leftValue": "={{ $json.category }}",
+              "rightValue": "spam",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "a1626260-0062-4a2b-9c3d-000000000062",
+              "leftValue": "={{ $json.confidence }}",
+              "rightValue": 0.8,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b2636360-0063-4a2b-9c3d-000000000063",
+      "name": "Spam & High Confidence?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [1760, -60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Name: $json.name, Email: $json.email, Company: $json.company, Message: $json.message, Category: $json.categoryLabel, Status: 'Closed', 'AI Draft': 'Subject: ' + $json.reply_subject + '\\n\\n' + $json.reply_body } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c3646460-0064-4a2b-9c3d-000000000064",
+      "name": "Create Airtable Record (Spam - Closed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, -160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.DISCORD_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ embeds: [ { title: '🚫 Spam lead closed', color: 9807270, fields: [ { name: 'Name', value: $json.name || 'not provided', inline: true }, { name: 'Email', value: $json.email || 'not provided', inline: true }, { name: 'Confidence', value: Math.round($json.confidence * 100) + '%', inline: true }, { name: 'Reason', value: 'Classified as spam by AI screening', inline: false } ], footer: { text: 'Bloom Studio | Lead Intake' }, timestamp: $now.toISO() } ] }) }}",
+        "options": {}
+      },
+      "id": "d4656560-0065-4a2b-9c3d-000000000065",
+      "name": "Notify Discord: Spam Lead Closed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, -160],
+      "continueOnFail": true
+    },
+    {
       "parameters": {},
-      "id": "5c2c2cc0-002c-4a2b-9c3d-00000000002c",
-      "name": "Continue -> Step 5 (Groq Classification)",
+      "id": "e5666660-0066-4a2b-9c3d-000000000066",
+      "name": "Continue -> Step 6 (Save + Send + Notify)",
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
-      "position": [1100, -60]
+      "position": [1980, 40]
     },
     {
       "parameters": {
@@ -193,12 +311,38 @@
     "Lead Exists?": {
       "main": [
         [{ "node": "Prepare Duplicate Update", "type": "main", "index": 0 }],
-        [{ "node": "Continue -> Step 5 (Groq Classification)", "type": "main", "index": 0 }]
+        [{ "node": "Build Groq Prompt", "type": "main", "index": 0 }]
       ]
     },
     "Prepare Duplicate Update": {
       "main": [
         [{ "node": "Update Existing Lead", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Groq Prompt": {
+      "main": [
+        [{ "node": "Groq Classify & Draft Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Groq Classify & Draft Reply": {
+      "main": [
+        [{ "node": "Parse Groq Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Groq Response": {
+      "main": [
+        [{ "node": "Spam & High Confidence?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Spam & High Confidence?": {
+      "main": [
+        [{ "node": "Create Airtable Record (Spam - Closed)", "type": "main", "index": 0 }],
+        [{ "node": "Continue -> Step 6 (Save + Send + Notify)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Create Airtable Record (Spam - Closed)": {
+      "main": [
+        [{ "node": "Notify Discord: Spam Lead Closed", "type": "main", "index": 0 }]
       ]
     }
   },
