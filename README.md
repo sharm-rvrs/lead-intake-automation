@@ -1,6 +1,6 @@
 # Lead Intake & Follow-Up Automation
 
-An AI-powered lead intake and follow-up pipeline, built end to end as a portfolio project around a realistic scenario: a small studio ("Bloom Studio," a fictional client) that wants every inquiry validated, triaged by AI, answered personally, and followed up automatically.
+An AI-powered lead intake and follow-up pipeline, built end to end as a solo project around a realistic scenario: a small studio ("Bloom Studio," a fictional client) that wants every inquiry validated, triaged by AI, answered personally, and followed up automatically.
 
 ![n8n production workflow](docs/screenshots/step8-n8n-production.png)
 
