@@ -1,0 +1,219 @@
+{
+  "id": "followupcheckmain",
+  "name": "Follow-Up Check",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "a1a1a1a0-0001-4a2b-9c3d-100000000001",
+      "name": "Daily 9am Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "filterByFormula", "value": "={{ 'AND({Status} = \"Awaiting Reply\", DATETIME_DIFF(NOW(), {Last Contacted}, \"days\") >= 3)' }}" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "b2b2b2a0-0002-4a2b-9c3d-100000000002",
+      "name": "List Awaiting Replies",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst records = response.records || [];\n\nreturn records.map(r => ({\n  json: {\n    recordId: r.id,\n    name: r.fields.Name || '',\n    email: r.fields.Email || '',\n    message: r.fields.Message || '',\n    category: r.fields.Category || '',\n  }\n}));"
+      },
+      "id": "c3c3c3a0-0003-4a2b-9c3d-100000000003",
+      "name": "Extract Records",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "d4d4d4a0-0004-4a2b-9c3d-100000000004",
+      "name": "Loop Over Items",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {},
+      "id": "e5e5e5a0-0005-4a2b-9c3d-100000000005",
+      "name": "Follow-ups Complete",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [880, -140]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const lead = $input.first().json;\n\nconst systemPrompt = [\n  'You are the intake assistant for Bloom Studio, a small creative/marketing agency.',\n  'You are sending a short, friendly check in follow up email to a lead who inquired a few days ago and has not replied yet.',\n  'You will be given their name, their original inquiry message, and its category, for context.',\n  'Draft the follow up in reply_body following these exact content rules:',\n  '- Total length must be 40 to 80 words.',\n  '- Briefly reference their original inquiry using details or phrasing from their own message, not generic language.',\n  '- Keep the tone warm, low pressure, and brief, like a quick check in, not a repeat of the original reply.',\n  '- Never fabricate specific past experience, client counts, or results. Keep any confidence statement general instead, like saying this is exactly the kind of project Bloom Studio loves working on.',\n  '- End with exactly one gentle question or next step inviting them to reply if they are still interested.',\n  '- Never use em dashes anywhere in the reply.',\n  'Then format reply_body as real paragraphs, using a literal JSON \\\\n escape for every line break, structured exactly like this:',\n  '1. A greeting line: \"Hi {name},\" using their first name, never \"Dear\".',\n  '2. A blank line (two consecutive \\\\n escapes) separating the greeting from the body.',\n  '3. One short body paragraph containing the reference to their inquiry and the gentle question or next step.',\n  '4. A blank line (two consecutive \\\\n escapes) separating the body from the sign off.',\n  '5. \"Warm regards,\" on its own line.',\n  '6. \"The Bloom Studio Team\" on its own line, directly after, with no blank line between the two sign off lines.',\n  'Example of a correctly formatted reply_body value showing the required escapes: \"Hi Jordan,\\\\n\\\\nJust checking in on your inquiry about a new logo and brand refresh, we would love to help if you are still interested. Let us know if you would like to move forward or if you have any questions.\\\\n\\\\nWarm regards,\\\\nThe Bloom Studio Team\"',\n  'Respond ONLY with a single minified JSON object, no markdown code fences, no commentary, matching exactly this shape:',\n  '{\"reply_subject\": string, \"reply_body\": string}',\n].join('\\n');\n\nconst userPrompt = [\n  'Name: ' + lead.name,\n  'Category: ' + lead.category,\n  'Original inquiry: ' + lead.message,\n].join('\\n');\n\nreturn [{\n  json: {\n    ...lead,\n    systemPrompt,\n    userPrompt,\n  }\n}];"
+      },
+      "id": "f6f6f6a0-0006-4a2b-9c3d-100000000006",
+      "name": "Build Follow-up Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 60]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'llama-3.3-70b-versatile', temperature: 0.4, response_format: { type: 'json_object' }, messages: [ { role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userPrompt } ] }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.GROQ_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "07070170-0007-4a2b-9c3d-100000000007",
+      "name": "Groq Draft Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 60]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const response = $input.first().json;\nconst lead = $('Build Follow-up Prompt').item.json;\n\nlet content = '';\ntry {\n  content = response.choices[0].message.content;\n} catch (e) {\n  content = '';\n}\n\ncontent = String(content || '').trim();\nif (content.startsWith('```')) {\n  content = content.replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/i, '').trim();\n}\n\nlet parsed = null;\ntry {\n  parsed = JSON.parse(content);\n} catch (e) {\n  parsed = null;\n}\n\nlet reply_subject = '';\nlet reply_body = '';\n\nif (parsed && typeof parsed === 'object') {\n  reply_subject = String(parsed.reply_subject || '').trim();\n  reply_body = String(parsed.reply_body || '').trim();\n}\n\nif (!reply_subject) {\n  reply_subject = 'Following up on your inquiry';\n}\nif (!reply_body) {\n  reply_body = 'Hi ' + (lead.name || 'there') + ',\\n\\nJust checking in on your recent inquiry with Bloom Studio, we would love to help if you are still interested. Let us know if you would like to move forward or if you have any questions.\\n\\nWarm regards,\\nThe Bloom Studio Team';\n}\n\nreturn [{\n  json: {\n    recordId: lead.recordId,\n    email: lead.email,\n    name: lead.name,\n    reply_subject,\n    reply_body,\n  }\n}];"
+      },
+      "id": "18181870-0008-4a2b-9c3d-100000000008",
+      "name": "Parse Follow-up Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 60]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.email }}",
+        "subject": "={{ $json.reply_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.reply_body }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "29292970-0009-4a2b-9c3d-100000000009",
+      "name": "Send Follow-up Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1540, 60],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "quLPG8FlKdqVHZE5",
+          "name": "Gmail - Bloom Studio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ 'https://api.airtable.com/v0/app2ldUhplS9k34QZ/tbl21HHue6IsXwNZR/' + $('Parse Follow-up Response').item.json.recordId }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ fields: { Status: 'Follow-up Sent', 'Last Contacted': $now.toISO() } }) }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{ 'Bearer ' + $env.AIRTABLE_PAT }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "30303070-0010-4a2b-9c3d-100000000010",
+      "name": "Update Airtable Record",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 60]
+    }
+  ],
+  "connections": {
+    "Daily 9am Trigger": {
+      "main": [
+        [{ "node": "List Awaiting Replies", "type": "main", "index": 0 }]
+      ]
+    },
+    "List Awaiting Replies": {
+      "main": [
+        [{ "node": "Extract Records", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Records": {
+      "main": [
+        [{ "node": "Loop Over Items", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Over Items": {
+      "main": [
+        [{ "node": "Follow-ups Complete", "type": "main", "index": 0 }],
+        [{ "node": "Build Follow-up Prompt", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Follow-up Prompt": {
+      "main": [
+        [{ "node": "Groq Draft Follow-up", "type": "main", "index": 0 }]
+      ]
+    },
+    "Groq Draft Follow-up": {
+      "main": [
+        [{ "node": "Parse Follow-up Response", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Follow-up Response": {
+      "main": [
+        [{ "node": "Send Follow-up Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Follow-up Email": {
+      "main": [
+        [{ "node": "Update Airtable Record", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Airtable Record": {
+      "main": [
+        [{ "node": "Loop Over Items", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Manila"
+  }
+}
